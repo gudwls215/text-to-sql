@@ -1,133 +1,361 @@
 {
-  "_comment": "한국어 Text-to-SQL 평가 데이터셋 — BIRD financial DB (public 스키마, PostgreSQL). gold_sql 의 실행 결과와 모델 생성 SQL 의 실행 결과를 비교해 execution accuracy 를 측정한다. 코드 값 매핑은 financial_schema.md 기준.",
+  "_comment": "한국어 Text-to-SQL 평가 데이터셋 — BIRD financial DB (public 스키마, PostgreSQL). gold_sql 의 실행 결과와 모델 생성 SQL 의 실행 결과를 비교해 execution accuracy 를 측정한다. 질문은 실제 사용자 말투(정확한 컬럼명/코드값/스키마 용어를 모름, 구어체)를 가정하며, 코드 매핑은 DB 코멘트(schema_metadata.json)에서 모델에 제공된다. note 필드가 있는 항목은 해석이 갈릴 수 있는 모호한 질문으로, gold_sql 은 가장 합리적인 해석을 따른다.",
   "schema": "public",
   "database": "bird",
   "items": [
     {
       "id": "easy-01",
       "difficulty": "easy",
-      "question": "전체 계좌는 몇 개인가요?",
+      "question": "계좌가 다 해서 몇 개예요?",
       "gold_sql": "SELECT count(*) FROM account;",
       "tables": ["account"]
     },
     {
       "id": "easy-02",
       "difficulty": "easy",
-      "question": "여성(F) 고객은 몇 명인가요?",
+      "question": "여자 고객은 몇 명이에요?",
       "gold_sql": "SELECT count(*) FROM client WHERE gender = 'F';",
       "tables": ["client"]
     },
     {
       "id": "easy-03",
       "difficulty": "easy",
-      "question": "전체 고객 수를 구해주세요.",
+      "question": "고객이 총 몇 명이나 돼요?",
       "gold_sql": "SELECT count(*) FROM client;",
       "tables": ["client"]
     },
     {
       "id": "easy-04",
       "difficulty": "easy",
-      "question": "골드(gold) 등급 신용카드는 몇 장 발급되었나요?",
+      "question": "골드카드 몇 장이나 나갔어요?",
       "gold_sql": "SELECT count(*) FROM card WHERE type = 'gold';",
       "tables": ["card"]
     },
     {
       "id": "easy-05",
       "difficulty": "easy",
-      "question": "명세서를 월간(POPLATEK MESICNE)으로 받는 계좌는 몇 개인가요?",
+      "question": "명세서 다달이 받는 계좌가 얼마나 돼요?",
       "gold_sql": "SELECT count(*) FROM account WHERE frequency = 'POPLATEK MESICNE';",
       "tables": ["account"]
     },
     {
       "id": "easy-06",
       "difficulty": "easy",
-      "question": "대출은 모두 몇 건인가요?",
+      "question": "대출 나간 거 전부 합치면 몇 건이에요?",
       "gold_sql": "SELECT count(*) FROM loan;",
       "tables": ["loan"]
     },
     {
       "id": "medium-01",
       "difficulty": "medium",
-      "question": "대출 승인 금액의 평균은 얼마인가요?",
+      "question": "대출 한 건당 보통 얼마씩 빌려가요?",
       "gold_sql": "SELECT avg(amount) FROM loan;",
       "tables": ["loan"]
     },
     {
       "id": "medium-02",
       "difficulty": "medium",
-      "question": "가장 큰 대출 승인 금액은 얼마인가요?",
+      "question": "지금까지 제일 크게 빌려준 대출이 얼마예요?",
       "gold_sql": "SELECT max(amount) FROM loan;",
       "tables": ["loan"]
     },
     {
       "id": "medium-03",
       "difficulty": "medium",
-      "question": "연체(status 가 D) 상태인 대출은 몇 건인가요?",
+      "question": "지금 돈 못 갚고 있는 대출이 몇 건이에요?",
       "gold_sql": "SELECT count(*) FROM loan WHERE status = 'D';",
-      "tables": ["loan"]
+      "tables": ["loan"],
+      "note": "모호: '돈 못 갚는'을 상환 중 연체 상태(status='D')로 해석. (이미 완납됐지만 미상환분이 남은 'B' 까지 포함하는 해석도 가능)"
     },
     {
       "id": "medium-04",
       "difficulty": "medium",
-      "question": "OWNER 권한을 가진 disposition 레코드는 몇 개인가요?",
+      "question": "계좌 주인으로 등록돼 있는 게 몇 건이에요?",
       "gold_sql": "SELECT count(*) FROM disp WHERE type = 'OWNER';",
       "tables": ["disp"]
     },
     {
       "id": "medium-05",
       "difficulty": "medium",
-      "question": "보험(POJISTNE) 목적의 자동이체 지시는 몇 건인가요?",
+      "question": "보험료 자동으로 빠져나가게 해둔 게 몇 건이에요?",
       "gold_sql": "SELECT count(*) FROM \"order\" WHERE k_symbol = 'POJISTNE';",
       "tables": ["order"]
     },
     {
       "id": "medium-06",
       "difficulty": "medium",
-      "question": "평균 급여(a11)가 가장 높은 지역의 지역명(a2)은 무엇인가요?",
+      "question": "월급이 제일 센 동네가 어디예요?",
       "gold_sql": "SELECT a2 FROM district ORDER BY a11 DESC LIMIT 1;",
       "tables": ["district"]
     },
     {
       "id": "medium-07",
       "difficulty": "medium",
-      "question": "대출 기간(duration)이 24개월인 대출의 월 상환액(payments) 평균은 얼마인가요?",
+      "question": "2년짜리 대출은 매달 얼마씩 갚아요?",
       "gold_sql": "SELECT avg(payments) FROM loan WHERE duration = 24;",
       "tables": ["loan"]
     },
     {
+      "id": "medium-08",
+      "difficulty": "medium",
+      "question": "1995년에 새로 튼 계좌가 몇 개예요?",
+      "gold_sql": "SELECT count(*) FROM account WHERE EXTRACT(YEAR FROM date) = 1995;",
+      "tables": ["account"]
+    },
+    {
+      "id": "medium-09",
+      "difficulty": "medium",
+      "question": "명세서를 일주일에 한 번씩 받는 계좌는 전체에서 어느 정도예요?",
+      "gold_sql": "SELECT CAST(count(*) FILTER (WHERE frequency = 'POPLATEK TYDNE') AS REAL) / count(*) FROM account;",
+      "tables": ["account"]
+    },
+    {
+      "id": "medium-10",
+      "difficulty": "medium",
+      "question": "제일 최근에 만든 계좌는 언제 거예요?",
+      "gold_sql": "SELECT max(date) FROM account;",
+      "tables": ["account"]
+    },
+    {
       "id": "hard-01",
       "difficulty": "hard",
-      "question": "gold 카드를 소유한 고객은 몇 명인가요?",
+      "question": "골드카드 쓰는 사람 몇 명이에요?",
       "gold_sql": "SELECT count(DISTINCT d.client_id) FROM card c JOIN disp d ON c.disp_id = d.disp_id WHERE c.type = 'gold';",
       "tables": ["card", "disp"]
     },
     {
       "id": "hard-02",
       "difficulty": "hard",
-      "question": "남성(M) 고객이 소유자(OWNER)로 연결된 계좌는 몇 개인가요?",
+      "question": "남자 고객 이름으로 된 계좌가 몇 개예요?",
       "gold_sql": "SELECT count(DISTINCT d.account_id) FROM disp d JOIN client c ON d.client_id = c.client_id WHERE d.type = 'OWNER' AND c.gender = 'M';",
       "tables": ["disp", "client"]
     },
     {
       "id": "hard-03",
       "difficulty": "hard",
-      "question": "계좌 수가 가장 많은 지역의 지역명(a2)은 무엇인가요?",
+      "question": "계좌가 제일 많이 몰려 있는 동네가 어디예요?",
       "gold_sql": "SELECT d.a2 FROM account a JOIN district d ON a.district_id = d.district_id GROUP BY d.a2 ORDER BY count(*) DESC LIMIT 1;",
       "tables": ["account", "district"]
     },
     {
       "id": "hard-04",
       "difficulty": "hard",
-      "question": "1996년에 발급된 신용카드는 몇 장인가요?",
+      "question": "1996년에 새로 나온 카드가 몇 장이에요?",
       "gold_sql": "SELECT count(*) FROM card WHERE EXTRACT(YEAR FROM issued) = 1996;",
       "tables": ["card"]
     },
     {
       "id": "hard-05",
       "difficulty": "hard",
-      "question": "출금(VYDAJ) 거래 중 가장 큰 금액은 얼마인가요?",
+      "question": "출금 중에 제일 많이 빠져나간 게 얼마예요?",
       "gold_sql": "SELECT max(amount) FROM trans WHERE type = 'VYDAJ';",
       "tables": ["trans"]
+    },
+    {
+      "id": "hard-06",
+      "difficulty": "hard",
+      "question": "계좌에 사람들이 어떤 자격으로 묶여 있는지 종류별로 많은 순서대로 보여줘요.",
+      "gold_sql": "SELECT type, count(*) FROM disp GROUP BY type ORDER BY count(*) DESC;",
+      "tables": ["disp"]
+    },
+    {
+      "id": "hard-07",
+      "difficulty": "hard",
+      "question": "골드카드 가진 여자 고객 몇 명이에요?",
+      "gold_sql": "SELECT count(DISTINCT cl.client_id) FROM card c JOIN disp d ON c.disp_id = d.disp_id JOIN client cl ON d.client_id = cl.client_id WHERE c.type = 'gold' AND cl.gender = 'F';",
+      "tables": ["card", "disp", "client"]
+    },
+    {
+      "id": "hard-08",
+      "difficulty": "hard",
+      "question": "평균 월급이 만 원 넘는 동네에 사는 고객이 몇 명이에요?",
+      "gold_sql": "SELECT count(*) FROM client cl JOIN district di ON cl.district_id = di.district_id WHERE di.a11 >= 10000;",
+      "tables": ["client", "district"]
+    },
+    {
+      "id": "hard-09",
+      "difficulty": "hard",
+      "question": "대출 있는 계좌 주인이 몇 명이에요?",
+      "gold_sql": "SELECT count(DISTINCT d.client_id) FROM loan l JOIN disp d ON l.account_id = d.account_id WHERE d.type = 'OWNER';",
+      "tables": ["loan", "disp"]
+    },
+    {
+      "id": "hard-10",
+      "difficulty": "hard",
+      "question": "평균 대출액이 제일 높은 동네가 어디예요?",
+      "gold_sql": "SELECT di.a2 FROM loan l JOIN account a ON l.account_id = a.account_id JOIN district di ON a.district_id = di.district_id GROUP BY di.a2 ORDER BY avg(l.amount) DESC LIMIT 1;",
+      "tables": ["loan", "account", "district"]
+    },
+    {
+      "id": "hard-11",
+      "difficulty": "hard",
+      "question": "연체 대출이 제일 많은 동네가 어디예요?",
+      "gold_sql": "SELECT di.a2 FROM loan l JOIN account a ON l.account_id = a.account_id JOIN district di ON a.district_id = di.district_id WHERE l.status = 'D' GROUP BY di.a2 ORDER BY count(*) DESC LIMIT 1;",
+      "tables": ["loan", "account", "district"]
+    },
+    {
+      "id": "hard-12",
+      "difficulty": "hard",
+      "question": "1996년에 나온 골드카드가 몇 장이에요?",
+      "gold_sql": "SELECT count(*) FROM card WHERE type = 'gold' AND EXTRACT(YEAR FROM issued) = 1996;",
+      "tables": ["card"]
+    },
+    {
+      "id": "hard-13",
+      "difficulty": "hard",
+      "question": "돈을 제일 많이 빼 쓴 계좌가 어디예요?",
+      "gold_sql": "SELECT account_id FROM trans WHERE type = 'VYDAJ' GROUP BY account_id ORDER BY sum(amount) DESC LIMIT 1;",
+      "tables": ["trans"],
+      "note": "모호: '많이 빼 쓴'을 출금(VYDAJ) 금액 합계가 가장 큰 계좌로 해석. (출금 건수 최다 계좌로 해석할 수도 있음)"
+    },
+    {
+      "id": "hard-14",
+      "difficulty": "hard",
+      "question": "보험료 자동이체는 보통 한 번에 얼마씩 나가요?",
+      "gold_sql": "SELECT avg(amount) FROM \"order\" WHERE k_symbol = 'POJISTNE';",
+      "tables": ["order"]
+    },
+    {
+      "id": "hard-15",
+      "difficulty": "hard",
+      "question": "카드 등급별로 몇 장씩 나갔는지 보여줘요.",
+      "gold_sql": "SELECT type, count(*) FROM card GROUP BY type;",
+      "tables": ["card"]
+    },
+    {
+      "id": "hard-16",
+      "difficulty": "hard",
+      "question": "남자 고객 명의 계좌 중에서 명세서 매달 받는 게 몇 개예요?",
+      "gold_sql": "SELECT count(DISTINCT a.account_id) FROM account a JOIN disp d ON a.account_id = d.account_id JOIN client cl ON d.client_id = cl.client_id WHERE d.type = 'OWNER' AND cl.gender = 'M' AND a.frequency = 'POPLATEK MESICNE';",
+      "tables": ["account", "disp", "client"]
+    },
+    {
+      "id": "hard-17",
+      "difficulty": "hard",
+      "question": "평균보다 많이 빌려간 대출이 몇 건이에요?",
+      "gold_sql": "SELECT count(*) FROM loan WHERE amount > (SELECT avg(amount) FROM loan);",
+      "tables": ["loan"]
+    },
+    {
+      "id": "hard-18",
+      "difficulty": "hard",
+      "question": "거래가 한 번도 없는 계좌가 몇 개예요?",
+      "gold_sql": "SELECT count(*) FROM account WHERE NOT EXISTS (SELECT 1 FROM trans WHERE trans.account_id = account.account_id);",
+      "tables": ["account", "trans"]
+    },
+    {
+      "id": "hard-19",
+      "difficulty": "hard",
+      "question": "고객이 제일 많은 동네 세 곳이 어디예요?",
+      "gold_sql": "SELECT di.a2 FROM client cl JOIN district di ON cl.district_id = di.district_id GROUP BY di.a2 ORDER BY count(*) DESC LIMIT 3;",
+      "tables": ["client", "district"]
+    },
+    {
+      "id": "hard-20",
+      "difficulty": "hard",
+      "question": "골드카드 회원들이 갖고 있는 계좌가 다 해서 몇 개예요?",
+      "gold_sql": "SELECT count(DISTINCT d.account_id) FROM card c JOIN disp d ON c.disp_id = d.disp_id WHERE c.type = 'gold';",
+      "tables": ["card", "disp"]
+    },
+    {
+      "id": "hard-21",
+      "difficulty": "hard",
+      "question": "계좌 많은 동네 다섯 곳 이름이랑 평균 월급, 계좌 수 좀 보여줘요.",
+      "gold_sql": "SELECT di.a2, di.a11, count(a.account_id) FROM district di JOIN account a ON a.district_id = di.district_id GROUP BY di.a2, di.a11 ORDER BY count(a.account_id) DESC LIMIT 5;",
+      "tables": ["district", "account"]
+    },
+    {
+      "id": "hard-22",
+      "difficulty": "hard",
+      "question": "1997년 한 해 동안 출금이 몇 번이나 있었어요?",
+      "gold_sql": "SELECT count(*) FROM trans WHERE type = 'VYDAJ' AND EXTRACT(YEAR FROM date) = 1997;",
+      "tables": ["trans"]
+    },
+    {
+      "id": "hard-23",
+      "difficulty": "hard",
+      "question": "쓰는 사람이 둘 이상인 계좌가 몇 개예요?",
+      "gold_sql": "SELECT count(*) FROM (SELECT account_id FROM disp GROUP BY account_id HAVING count(*) >= 2) t;",
+      "tables": ["disp"]
+    },
+    {
+      "id": "hard-24",
+      "difficulty": "hard",
+      "question": "전체 거래 중에 카드로 출금한 게 차지하는 비율이 얼마예요?",
+      "gold_sql": "SELECT CAST(count(*) FILTER (WHERE operation = 'VYBER KARTOU') AS REAL) / count(*) FROM trans;",
+      "tables": ["trans"]
+    },
+    {
+      "id": "amb-01",
+      "difficulty": "medium",
+      "question": "부자 동네는 어디인가요?",
+      "gold_sql": "SELECT a2 FROM district ORDER BY a11 DESC LIMIT 1;",
+      "tables": ["district"],
+      "note": "모호: '부자 동네'를 평균 급여(a11)가 가장 높은 지역으로 해석. (실업률/범죄율 등 다른 해석 가능)"
+    },
+    {
+      "id": "amb-02",
+      "difficulty": "hard",
+      "question": "가장 큰 거래는 얼마인가요?",
+      "gold_sql": "SELECT max(amount) FROM trans;",
+      "tables": ["trans"],
+      "note": "모호: 입금/출금 구분 없이 전체 거래(trans) 금액의 최댓값으로 해석."
+    },
+    {
+      "id": "amb-03",
+      "difficulty": "medium",
+      "question": "가장 오래된 계좌는 언제 개설됐나요?",
+      "gold_sql": "SELECT min(date) FROM account;",
+      "tables": ["account"],
+      "note": "모호: '가장 오래된'을 개설일(date)이 가장 이른 계좌로 해석."
+    },
+    {
+      "id": "amb-04",
+      "difficulty": "hard",
+      "question": "거래가 가장 활발한 계좌는 어느 것인가요?",
+      "gold_sql": "SELECT account_id FROM trans GROUP BY account_id ORDER BY count(*) DESC LIMIT 1;",
+      "tables": ["trans"],
+      "note": "모호: '활발함'을 거래 건수가 가장 많은 계좌로 해석. (거래 금액 합계로 해석할 수도 있음)"
+    },
+    {
+      "id": "amb-05",
+      "difficulty": "hard",
+      "question": "돈을 가장 많이 빌린 고객은 누구인가요?",
+      "gold_sql": "SELECT d.client_id FROM loan l JOIN disp d ON l.account_id = d.account_id WHERE d.type = 'OWNER' ORDER BY l.amount DESC LIMIT 1;",
+      "tables": ["loan", "disp"],
+      "note": "모호: 단일 대출 최고액 건의 소유자(OWNER) 고객으로 해석. (고객별 대출 합계 최댓값으로 해석할 수도 있음)"
+    },
+    {
+      "id": "amb-06",
+      "difficulty": "hard",
+      "question": "우리 VIP 고객은 누구누구예요?",
+      "gold_sql": "SELECT DISTINCT cl.client_id FROM card c JOIN disp d ON c.disp_id = d.disp_id JOIN client cl ON d.client_id = cl.client_id WHERE c.type = 'gold';",
+      "tables": ["card", "disp", "client"],
+      "note": "모호: 'VIP'를 골드카드 보유 고객으로 해석. (대출 규모/거래 활동량 등 다른 기준으로 정의할 수도 있음)"
+    },
+    {
+      "id": "amb-07",
+      "difficulty": "hard",
+      "question": "대출 잘 갚고 있는 비율이 어느 정도예요?",
+      "gold_sql": "SELECT CAST(count(*) FILTER (WHERE status IN ('A', 'C')) AS REAL) / count(*) FROM loan;",
+      "tables": ["loan"],
+      "note": "모호: '잘 갚는'을 완납·정상(A)과 상환 중·정상(C) 상태로 해석. (연체 없이 완료된 'A'만으로 한정하는 해석도 가능)"
+    },
+    {
+      "id": "amb-08",
+      "difficulty": "medium",
+      "question": "남자가 많아요, 여자가 많아요?",
+      "gold_sql": "SELECT gender, count(*) FROM client GROUP BY gender ORDER BY count(*) DESC LIMIT 1;",
+      "tables": ["client"],
+      "note": "모호: 더 많은 쪽 하나를 답으로 해석. (양쪽 성별 건수를 모두 반환하는 해석도 가능)"
+    },
+    {
+      "id": "amb-09",
+      "difficulty": "hard",
+      "question": "요즘 들어 계좌 많이 만들어요?",
+      "gold_sql": "SELECT count(*) FROM account WHERE EXTRACT(YEAR FROM date) = (SELECT max(EXTRACT(YEAR FROM date)) FROM account);",
+      "tables": ["account"],
+      "note": "모호: '요즘'을 데이터상 가장 최근 연도로 보고 그 해의 신규 계좌 수로 해석. (최근 N개월 등 기간 기준이 불명확)"
     }
   ]
 }
