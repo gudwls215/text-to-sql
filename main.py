@@ -6,9 +6,14 @@ from dotenv import load_dotenv
 # .env 파일의 값을 환경변수로 로드
 load_dotenv()
 
-conn = psycopg2.connect(host="localhost", dbname="bird",
-                        user="postgres", password="ttm2018!@#")
-SCHEMA = "financial"
+conn = psycopg2.connect(
+    host=os.environ.get("DB_HOST", "localhost"),
+    port=os.environ.get("DB_PORT", "5432"),
+    dbname=os.environ.get("DB_NAME", "bird"),
+    user=os.environ.get("DB_USER", "postgres"),
+    password=os.environ["DB_PASSWORD"],
+)
+SCHEMA = "public"
 
 # OpenAI API 사용: .env 의 OPENAI_API_KEY 에서 키를 읽는다.
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
