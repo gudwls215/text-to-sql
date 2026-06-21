@@ -22,7 +22,8 @@
 |------|------|
 | `eval/dataset/financial_ko.json` | 한국어 질문 + 정답 SQL (난이도 easy/medium/hard) |
 | `eval/runner.py` | DB 연결·스키마 추출·진입점 해석·결과 비교 (안정 인프라) |
-| `eval/evaluate.py` | 정확도 리포트 CLI |
+| `eval/evaluate.py` | 정확도 리포트 CLI (실행 시 이력 자동 저장) |
+| `eval/store.py` | 평가 이력 저장/조회 (`eval.run` · `eval.result` 테이블) |
 | `tests/test_dataset.py` | 데이터셋 무결성 (DB/LLM 불필요, 항상 실행) |
 | `tests/test_execution_accuracy.py` | 실행 정확도 통합 테스트 (조건부 실행) |
 
@@ -61,7 +62,49 @@ uv run pytest tests/test_execution_accuracy.py::test_overall_accuracy_threshold 
 uv run python -m eval.evaluate              # 전체
 uv run python -m eval.evaluate --difficulty easy
 uv run python -m eval.evaluate --limit 5
+uv run python -m eval.evaluate --note "프롬프트 v2 실험"   # 메모와 함께 저장
+uv run python -m eval.evaluate --no-store    # DB 저장 없이 리포트만
 ```
+
+## 결과 이력 (history)
+
+매 실행은 자동으로 PostgreSQL 에 저장된다(끄려면 `--no-store`). 이력 테이블은
+데이터 테이블과 섞이지 않도록 **별도 `eval` 스키마**에 둔다(그래야
+`schema_introspect(public)` 가 읽는 LLM 프롬프트를 오염시키지 않는다).
+
+| 테이블 | 한 행의 의미 | 주요 컬럼 |
+|--------|--------------|-----------|
+| `eval.run` | 실행 1건 | `accuracy`, `correct/total`, `llm_model`, `git_commit/branch/dirty`, `entrypoint`, `dataset_path`, `dataset_sha256`, `dataset_json`(원본 전체), `difficulty`, `limit_n`, `duration_seconds`, `note` |
+| `eval.result` | 문항 1개 | `run_id`(FK), `item_id`, `passed`, `gold_sql`, `pred_sql`, `error`, `latency_seconds` |
+
+즉 **데이터셋 원본·코드 버전·LLM 모델·틀린 내역·정확도**가 한 실행에 묶여
+재현 가능한 형태로 남는다. 같은 `git_commit` + 같은 `dataset_sha256` 이면
+동일 조건의 재실행이다.
+
+과거 이력 보기:
+
+```powershell
+uv run python -m eval.evaluate --history            # 최근 20건 요약
+uv run python -m eval.evaluate --history --limit 50
+```
+
+틀린 내역만 SQL 로 조회하는 예:
+
+```sql
+-- 가장 최근 실행에서 틀린 문항
+SELECT r.item_id, r.question, r.gold_sql, r.pred_sql, r.error
+FROM eval.result r
+WHERE r.run_id = (SELECT max(id) FROM eval.run)
+  AND NOT r.passed
+ORDER BY r.item_id;
+
+-- 커밋별 정확도 추이
+SELECT git_commit, llm_model, accuracy, correct, total, created_at
+FROM eval.run ORDER BY created_at DESC;
+```
+
+> SUT 의 LLM 모델명은 진입점 모듈의 `MODEL` 상수에서 best-effort 로 읽는다.
+> 모듈에 없으면 환경변수 `T2S_MODEL` 로 명시할 수 있다.
 
 ## 데이터셋 확장
 

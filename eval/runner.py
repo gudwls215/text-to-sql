@@ -109,6 +109,21 @@ def resolve_generate_sql(entrypoint: str | None = None) -> Callable[[str, str], 
     return func
 
 
+def resolve_model_name(entrypoint: str | None = None) -> str | None:
+    """SUT 가 사용하는 LLM 모델명을 best-effort 로 알아낸다 (이력 기록용).
+
+    관례상 진입점 모듈이 `MODEL` 상수를 노출하면 그 값을 쓰고, 없으면
+    환경변수 `T2S_MODEL` 로 명시할 수 있다. 둘 다 없으면 None.
+    """
+    ep = entrypoint or os.environ.get("T2S_ENTRYPOINT", DEFAULT_ENTRYPOINT)
+    module_name = ep.partition(":")[0]
+    try:
+        module = importlib.import_module(module_name)
+    except Exception:  # noqa: BLE001 — 모델명을 못 구해도 평가는 진행
+        return os.environ.get("T2S_MODEL")
+    return getattr(module, "MODEL", None) or os.environ.get("T2S_MODEL")
+
+
 # ── 결과 비교 (execution accuracy) ──────────────────────────────────────────
 
 def _normalize_value(v: Any) -> Any:
