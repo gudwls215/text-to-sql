@@ -1,0 +1,23 @@
+# Secrets / 환경변수
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# BIRD 데이터셋 (대용량, 레포에 포함하지 않음)
+minidev/
+minidev.zip
+*.sqlite
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
