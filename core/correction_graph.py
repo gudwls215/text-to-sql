@@ -23,6 +23,7 @@ import logging
 import operator
 import os
 import re
+from dataclasses import dataclass
 from typing import Annotated, Any, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -85,13 +86,98 @@ def _graph_log(message: str, *args: Any) -> None:
 
 def _stop_reason(state: CorrectionState) -> str:
     """루프 종료 사유를 사람이 읽기 쉬운 형태로 반환한다."""
+    if state.get("verdict") == "pass":
+        return "pass"
     attempts = state.get("attempts", 0)
     max_attempts = state.get("max_attempts", DEFAULT_MAX_ATTEMPTS)
     if attempts >= max_attempts:
         return "max_attempts"
-    if state.get("verdict") == "pass":
-        return "pass"
     return "unknown"
+
+
+@dataclass
+class RepairResult:
+    sql: str
+    applied: list[str]
+
+
+def _question_contract(question: str) -> dict[str, bool]:
+    q = question.lower()
+    ratio_like = any(tok in q for tok in ("비율", "어느 정도", "퍼센", "%", "율"))
+    count_like = ("몇" in q or "몇 개" in q or "count" in q) and not ratio_like
+    where_like = any(tok in q for tok in ("어디", "누구", "언제", "어느"))
+    return {"ratio_like": ratio_like, "count_like": count_like, "where_like": where_like}
+
+
+def _rule_based_judge(state: CorrectionState) -> tuple[str, str] | None:
+    """LLM judge 전에 질문-출력 형식 불일치를 빠르게 걸러낸다."""
+    sql = (state.get("sql") or "").strip().lower()
+    if not sql:
+        return "revise", "SQL 이 비어 있습니다. 질문에 맞는 SQL 을 생성하세요."
+
+    # 두 개 이상의 쿼리를 한 번에 내면 평가 계약과 어긋난다.
+    if ";" in sql.rstrip(";"):
+        return "revise", "하나의 질문에는 단일 SQL 문만 출력하세요(다중 문장 금지)."
+
+    contract = _question_contract(state.get("question", ""))
+    if contract["count_like"] and "count(" not in sql:
+        return "revise", "질문이 '몇/몇 개' 형태입니다. 단일 COUNT 집계 SQL 로 답하세요."
+    if contract["ratio_like"] and "/" not in sql:
+        return "revise", "질문이 비율/어느 정도 형태입니다. 분자/분모를 나누는 비율 식을 포함하세요."
+
+    return None
+
+
+def _apply_deterministic_repairs(prev_sql: str, exec_error: str | None) -> RepairResult:
+    """빈번한 PostgreSQL 오류를 LLM 호출 전에 1차 규칙으로 고친다."""
+    sql = prev_sql
+    applied: list[str] = []
+    err = (exec_error or "")
+
+    # 1) 잘못된 테이블명 transaction -> trans
+    if "transaction" in err.lower() and "relation" in err.lower():
+        replaced = re.sub(r'public\."?transaction"?', "public.trans", sql, flags=re.IGNORECASE)
+        if replaced != sql:
+            sql = replaced
+            applied.append("table:transaction->trans")
+
+    # 2) account.client_id 직접 조인 오류 -> disp 브리지 조인으로 치환
+    if "client_id" in err and "칼럼 없음" in err:
+        pattern = re.compile(
+            r"JOIN\s+public\.account\s+(\w+)\s+ON\s+(\w+)\.client_id\s*=\s*\1\.client_id",
+            flags=re.IGNORECASE,
+        )
+
+        def _bridge(m: re.Match[str]) -> str:
+            acc_alias = m.group(1)
+            left_alias = m.group(2)
+            disp_alias = f"disp_fix_{acc_alias}"
+            return (
+                f"JOIN public.disp {disp_alias} ON {left_alias}.client_id = {disp_alias}.client_id "
+                f"JOIN public.account {acc_alias} ON {disp_alias}.account_id = {acc_alias}.account_id"
+            )
+
+        replaced = pattern.sub(_bridge, sql)
+        if replaced != sql:
+            sql = replaced
+            applied.append("join:client->disp->account")
+
+    # 3) district 컬럼 오기 -> district.a2
+    if ".district" in sql and "district" in err and "칼럼 없음" in err:
+        replaced = re.sub(r"\b(\w+)\.district\b", r"\1.a2", sql)
+        if replaced != sql:
+            sql = replaced
+            applied.append("column:district->a2")
+
+    # 4) date 모호성 -> account.date 우선
+    if "모호" in err and re.search(r"\bdate\b", sql, flags=re.IGNORECASE):
+        replaced = re.sub(r"\bMAX\(\s*date\s*\)", "MAX(account.date)", sql, flags=re.IGNORECASE)
+        replaced = re.sub(r"\bMIN\(\s*date\s*\)", "MIN(account.date)", replaced, flags=re.IGNORECASE)
+        if replaced != sql:
+            sql = replaced
+            applied.append("column:date->account.date")
+
+    return RepairResult(sql=sql, applied=applied)
 
 
 def enable_native_tracing_if_langsmith() -> None:
@@ -225,13 +311,40 @@ def build_graph(conn, schema_text: str, judge_model: str):
     def generate_node(state: CorrectionState) -> dict:
         attempts = state.get("attempts", 0)
         correction = None
+        prev_sql = state.get("sql", "")
+
+        # 실행 오류 케이스는 LLM 재호출 전에 규칙 기반 1차 수선으로 빠르게 교정.
+        if attempts > 0 and not state.get("exec_ok"):
+            repaired = _apply_deterministic_repairs(prev_sql, state.get("exec_error"))
+            if repaired.applied and repaired.sql.strip() and repaired.sql.strip() != prev_sql.strip():
+                tag_current_run(node="generate", attempt=attempts + 1, repaired="|".join(repaired.applied))
+                _graph_log(
+                    "generate: attempt=%s repaired=%s sql=%s",
+                    attempts + 1,
+                    ",".join(repaired.applied),
+                    repaired.sql[:140],
+                )
+                return {"sql": repaired.sql, "attempts": attempts + 1}
+
         if attempts > 0:  # 재시도: 직전 SQL + 피드백을 프롬프트에 실어 교정 유도
             correction = {
-                "prev_sql": state.get("sql", ""),
+                "prev_sql": prev_sql,
                 "feedback": state.get("feedback", ""),
             }
         prompt = main.build_generation_prompt(state["question"], schema_text, correction)
         sql = main._clean_sql(llm_client.complete(prompt, model=main.MODEL, temperature=0))
+
+        # no-op 루프 차단: 재시도 SQL 이 직전과 동일하면 강한 제약으로 한 번 더 재작성.
+        if attempts > 0 and sql.strip() == prev_sql.strip():
+            force_prompt = (
+                f"{prompt}\n\n"
+                "추가 규칙: 직전 SQL 을 그대로 반복하면 실패입니다. "
+                "반드시 조인 경로/필터/집계 중 최소 1가지를 실질적으로 바꿔 SQL만 출력하세요."
+            )
+            retried = main._clean_sql(llm_client.complete(force_prompt, model=main.MODEL, temperature=0))
+            if retried.strip():
+                sql = retried
+
         tag_current_run(node="generate", attempt=attempts + 1)
         _graph_log("generate: attempt=%s sql=%s", attempts + 1, sql[:140])
         return {"sql": sql, "attempts": attempts + 1}
@@ -266,7 +379,11 @@ def build_graph(conn, schema_text: str, judge_model: str):
                 "점검하고 수정하세요."
             )
         else:
-            verdict, feedback = _llm_judge(state, judge_model)
+            rb = _rule_based_judge(state)
+            if rb is not None:
+                verdict, feedback = rb
+            else:
+                verdict, feedback = _llm_judge(state, judge_model)
             if verdict == "revise" and not feedback.strip():
                 feedback = (
                     "결과가 질문 의도와 맞지 않습니다. 필터/조인/집계 대상을 다시 점검하고 "

@@ -29,6 +29,12 @@ def test_route_end_when_budget_exhausted_even_if_revise():
     assert cg.route_after_judge(state) == "end"
 
 
+def test_stop_reason_prefers_pass_over_max_attempts():
+    # 같은 시점에 둘 다 성립해도 분석 로그는 pass 를 우선 표시한다.
+    state = {"verdict": "pass", "attempts": 3, "max_attempts": 3}
+    assert cg._stop_reason(state) == "pass"
+
+
 # ── parse_judge (관대한 JSON 파싱) ──────────────────────────────────────────
 
 def test_parse_judge_clean_json():
@@ -52,10 +58,35 @@ def test_trace_config_has_run_name_tags_and_metadata():
     assert cfg["run_name"] == "self_correction"
     assert "self-correction" in cfg["tags"]
     assert "judge:gpt-4o-mini" in cfg["tags"]
+    assert "item:amb-01" in cfg["tags"]
     assert cfg["metadata"]["question"] == "부자 동네는?"
     assert cfg["metadata"]["max_attempts"] == 3
     assert cfg["metadata"]["item_id"] == "amb-01"  # 호출부 메타 병합
     assert cfg["recursion_limit"] == 50
+
+
+def test_rule_based_judge_rejects_multi_statement():
+    verdict, feedback = cg._rule_based_judge({"question": "남자가 많아요?", "sql": "SELECT 1; SELECT 2"})
+    assert verdict == "revise"
+    assert "단일 SQL" in feedback
+
+
+def test_deterministic_repair_transaction_table_name():
+    rr = cg._apply_deterministic_repairs(
+        'SELECT * FROM public."transaction" t',
+        '오류:  "public.transaction" 이름의 릴레이션(relation)이 없습니다',
+    )
+    assert "public.trans" in rr.sql
+    assert "table:transaction->trans" in rr.applied
+
+
+def test_deterministic_repair_account_client_join():
+    rr = cg._apply_deterministic_repairs(
+        "SELECT * FROM public.client c JOIN public.account a ON c.client_id = a.client_id",
+        '오류:  a.client_id 칼럼 없음',
+    )
+    assert "JOIN public.disp" in rr.sql
+    assert "join:client->disp->account" in rr.applied
 
 
 # ── 루프 통합 (페이크 LLM + 페이크 DB) ──────────────────────────────────────

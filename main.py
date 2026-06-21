@@ -11,7 +11,7 @@ from core import llm_client, schema_introspect
 load_dotenv()
 
 SCHEMA = "public"
-MODEL = "gpt-3.5-turbo"   # 원하는 OpenAI 모델로
+MODEL = "gpt-4o-mini"   # 원하는 OpenAI 모델로
 _LAST_CORRECTION_STATE: dict | None = None
 
 # 외부 LLM 호출은 core.llm_client 경유 (CLAUDE.md 규약). 모델은 MODEL 로 고정해
@@ -154,6 +154,20 @@ def build_generation_prompt(
     그래프(core.correction_graph)의 generate 노드가 이 경로를 사용한다.
     """
     focused = build_focused_schema(question, schema_text)
+    q = question.lower()
+    ratio_like = any(tok in q for tok in ("비율", "어느 정도", "퍼센", "%", "율"))
+    count_like = ("몇" in q or "몇 개" in q) and not ratio_like
+    where_like = any(tok in q for tok in ("어디", "누구", "언제", "어느"))
+
+    output_contract = ["- 한 질문에는 SQL 한 문장만 출력하세요(세미콜론으로 다중문장 금지)."]
+    if count_like:
+        output_contract.append("- 질문이 '몇/몇 개' 형태면 COUNT 집계로 단일 수치(1행 1열)를 반환하세요.")
+    if ratio_like:
+        output_contract.append("- 질문이 비율/어느 정도면 분자/분모를 나눈 비율 식을 포함하세요.")
+    if where_like:
+        output_contract.append("- 질문이 '어디/누구/언제/어느'면 식별 가능한 대상 컬럼(예: 이름/지역/날짜)을 반환하세요.")
+    output_contract_text = "\n".join(output_contract)
+
     prompt = (
         "당신은 PostgreSQL 전문가입니다. 아래는 질문과 관련된 테이블만 추린 스키마입니다.\n"
         "각 컬럼 뒤 '-- 설명 (코드값)' 과 '-> 부모.컬럼'(FK) 을 참고하세요.\n\n"
@@ -163,7 +177,9 @@ def build_generation_prompt(
         "- SQL 쿼리만 출력하세요. 설명/마크다운/코드펜스 금지.\n"
         f'- 테이블은 {SCHEMA}.table_name 으로 한정하고, 예약어 테이블은 큰따옴표로 감싸세요 (예: {SCHEMA}."order").\n'
         "- 코드값 매핑을 WHERE 절에 정확히 사용하세요.\n"
-        "- 여러 테이블이 필요하면 제공된 FK 경로(->)를 따라 조인하세요."
+        "- 여러 테이블이 필요하면 제공된 FK 경로(->)를 따라 조인하세요.\n"
+        "출력 계약:\n"
+        f"{output_contract_text}"
     )
     if correction:
         prev_sql = correction.get("prev_sql") or ""
