@@ -12,12 +12,22 @@ BIRD 데이터셋 기반 Text-to-SQL baseline 테스트.
 | `financial_schema.md` | 테스트 대상 `financial` DB 스키마 정리 문서 |
 | `.env.example` | 환경변수 템플릿 |
 | `minidev/` | BIRD mini-dev 데이터셋 (git 미포함) |
+| `eval/` | 한국어 Text-to-SQL 평가 세트 (데이터셋 + 러너) |
+| `tests/` | 데이터셋 무결성 + 실행 정확도 테스트 |
 
 ## 사전 준비
 
-1. 의존성 설치
+1. 의존성 설치 (uv 사용)
    ```bash
-   pip install openai psycopg2-binary python-dotenv
+   uv sync
+   ```
+   > 사내/프록시 SSL 검사 환경에서는 `native-tls` 가 필요하며, `pyproject.toml`
+   > 의 `[tool.uv] native-tls = true` 로 자동 적용된다.
+
+   새 의존성 추가 시:
+   ```bash
+   uv add <패키지>          # 런타임
+   uv add --dev <패키지>    # 개발/테스트용
    ```
 2. 환경변수 설정 — `.env.example` 을 `.env` 로 복사 후 키 입력
    ```powershell
@@ -29,8 +39,17 @@ BIRD 데이터셋 기반 Text-to-SQL baseline 테스트.
 ## 실행
 
 ```bash
-python main.py
+uv run python main.py
 ```
+
+## 테스트 / 평가
+
+```powershell
+uv run pytest tests/test_dataset.py -v     # 데이터셋 무결성 (DB/LLM 불필요)
+$env:RUN_EVAL = "1"; uv run pytest          # 실행 정확도 통합 테스트 포함
+uv run python -m eval.evaluate              # 한국어 성능 리포트
+```
+자세한 내용은 `eval/README.md` 참고.
 
 ## 참고
 

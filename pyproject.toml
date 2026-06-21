@@ -1,0 +1,26 @@
+[project]
+name = "text-to-sql"
+version = "0.1.0"
+description = "BIRD 데이터셋 기반 Text-to-SQL baseline + 한국어 평가 세트"
+requires-python = ">=3.10"
+dependencies = [
+    "openai",
+    "psycopg2-binary",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.uv]
+# 사내/프록시 SSL 검사 환경 대응: 시스템 인증서 저장소 사용 (없으면 UnknownIssuer 에러)
+native-tls = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100

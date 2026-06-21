@@ -10,6 +10,7 @@ __pycache__/
 .venv/
 venv/
 env/
+.pytest_cache/
 
 # BIRD 데이터셋 (대용량, 레포에 포함하지 않음)
 minidev/
@@ -21,3 +22,7 @@ minidev.zip
 .idea/
 .DS_Store
 Thumbs.db
+
+.claude
+scripts/synthesize_reviews.py
+CLAUDE.md

@@ -1,0 +1,133 @@
+{
+  "_comment": "한국어 Text-to-SQL 평가 데이터셋 — BIRD financial DB (public 스키마, PostgreSQL). gold_sql 의 실행 결과와 모델 생성 SQL 의 실행 결과를 비교해 execution accuracy 를 측정한다. 코드 값 매핑은 financial_schema.md 기준.",
+  "schema": "public",
+  "database": "bird",
+  "items": [
+    {
+      "id": "easy-01",
+      "difficulty": "easy",
+      "question": "전체 계좌는 몇 개인가요?",
+      "gold_sql": "SELECT count(*) FROM account;",
+      "tables": ["account"]
+    },
+    {
+      "id": "easy-02",
+      "difficulty": "easy",
+      "question": "여성(F) 고객은 몇 명인가요?",
+      "gold_sql": "SELECT count(*) FROM client WHERE gender = 'F';",
+      "tables": ["client"]
+    },
+    {
+      "id": "easy-03",
+      "difficulty": "easy",
+      "question": "전체 고객 수를 구해주세요.",
+      "gold_sql": "SELECT count(*) FROM client;",
+      "tables": ["client"]
+    },
+    {
+      "id": "easy-04",
+      "difficulty": "easy",
+      "question": "골드(gold) 등급 신용카드는 몇 장 발급되었나요?",
+      "gold_sql": "SELECT count(*) FROM card WHERE type = 'gold';",
+      "tables": ["card"]
+    },
+    {
+      "id": "easy-05",
+      "difficulty": "easy",
+      "question": "명세서를 월간(POPLATEK MESICNE)으로 받는 계좌는 몇 개인가요?",
+      "gold_sql": "SELECT count(*) FROM account WHERE frequency = 'POPLATEK MESICNE';",
+      "tables": ["account"]
+    },
+    {
+      "id": "easy-06",
+      "difficulty": "easy",
+      "question": "대출은 모두 몇 건인가요?",
+      "gold_sql": "SELECT count(*) FROM loan;",
+      "tables": ["loan"]
+    },
+    {
+      "id": "medium-01",
+      "difficulty": "medium",
+      "question": "대출 승인 금액의 평균은 얼마인가요?",
+      "gold_sql": "SELECT avg(amount) FROM loan;",
+      "tables": ["loan"]
+    },
+    {
+      "id": "medium-02",
+      "difficulty": "medium",
+      "question": "가장 큰 대출 승인 금액은 얼마인가요?",
+      "gold_sql": "SELECT max(amount) FROM loan;",
+      "tables": ["loan"]
+    },
+    {
+      "id": "medium-03",
+      "difficulty": "medium",
+      "question": "연체(status 가 D) 상태인 대출은 몇 건인가요?",
+      "gold_sql": "SELECT count(*) FROM loan WHERE status = 'D';",
+      "tables": ["loan"]
+    },
+    {
+      "id": "medium-04",
+      "difficulty": "medium",
+      "question": "OWNER 권한을 가진 disposition 레코드는 몇 개인가요?",
+      "gold_sql": "SELECT count(*) FROM disp WHERE type = 'OWNER';",
+      "tables": ["disp"]
+    },
+    {
+      "id": "medium-05",
+      "difficulty": "medium",
+      "question": "보험(POJISTNE) 목적의 자동이체 지시는 몇 건인가요?",
+      "gold_sql": "SELECT count(*) FROM \"order\" WHERE k_symbol = 'POJISTNE';",
+      "tables": ["order"]
+    },
+    {
+      "id": "medium-06",
+      "difficulty": "medium",
+      "question": "평균 급여(a11)가 가장 높은 지역의 지역명(a2)은 무엇인가요?",
+      "gold_sql": "SELECT a2 FROM district ORDER BY a11 DESC LIMIT 1;",
+      "tables": ["district"]
+    },
+    {
+      "id": "medium-07",
+      "difficulty": "medium",
+      "question": "대출 기간(duration)이 24개월인 대출의 월 상환액(payments) 평균은 얼마인가요?",
+      "gold_sql": "SELECT avg(payments) FROM loan WHERE duration = 24;",
+      "tables": ["loan"]
+    },
+    {
+      "id": "hard-01",
+      "difficulty": "hard",
+      "question": "gold 카드를 소유한 고객은 몇 명인가요?",
+      "gold_sql": "SELECT count(DISTINCT d.client_id) FROM card c JOIN disp d ON c.disp_id = d.disp_id WHERE c.type = 'gold';",
+      "tables": ["card", "disp"]
+    },
+    {
+      "id": "hard-02",
+      "difficulty": "hard",
+      "question": "남성(M) 고객이 소유자(OWNER)로 연결된 계좌는 몇 개인가요?",
+      "gold_sql": "SELECT count(DISTINCT d.account_id) FROM disp d JOIN client c ON d.client_id = c.client_id WHERE d.type = 'OWNER' AND c.gender = 'M';",
+      "tables": ["disp", "client"]
+    },
+    {
+      "id": "hard-03",
+      "difficulty": "hard",
+      "question": "계좌 수가 가장 많은 지역의 지역명(a2)은 무엇인가요?",
+      "gold_sql": "SELECT d.a2 FROM account a JOIN district d ON a.district_id = d.district_id GROUP BY d.a2 ORDER BY count(*) DESC LIMIT 1;",
+      "tables": ["account", "district"]
+    },
+    {
+      "id": "hard-04",
+      "difficulty": "hard",
+      "question": "1996년에 발급된 신용카드는 몇 장인가요?",
+      "gold_sql": "SELECT count(*) FROM card WHERE EXTRACT(YEAR FROM issued) = 1996;",
+      "tables": ["card"]
+    },
+    {
+      "id": "hard-05",
+      "difficulty": "hard",
+      "question": "출금(VYDAJ) 거래 중 가장 큰 금액은 얼마인가요?",
+      "gold_sql": "SELECT max(amount) FROM trans WHERE type = 'VYDAJ';",
+      "tables": ["trans"]
+    }
+  ]
+}
