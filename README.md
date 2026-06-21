@@ -14,6 +14,9 @@ BIRD 데이터셋 기반 Text-to-SQL baseline 테스트.
 | `minidev/` | BIRD mini-dev 데이터셋 (git 미포함) |
 | `eval/` | 한국어 Text-to-SQL 평가 세트 (데이터셋 + 러너) |
 | `tests/` | 데이터셋 무결성 + 실행 정확도 테스트 |
+| `core/schema_introspect.py` | 카탈로그(컬럼·코멘트·FK)에서 풍부한 스키마 텍스트 추출 |
+| `schema_metadata.json` | 도메인 지식 단일 출처 (컬럼 설명·코드값·PK·FK) |
+| `migrations/` | `schema_metadata.json` 을 DB 코멘트/제약으로 적용하는 마이그레이션 |
 
 ## 사전 준비
 
@@ -35,6 +38,14 @@ BIRD 데이터셋 기반 Text-to-SQL baseline 테스트.
    # .env 안의 OPENAI_API_KEY 값을 채운다
    ```
 3. PostgreSQL `bird` 데이터베이스가 localhost 에 적재되어 있어야 함.
+4. 스키마 메타데이터(컬럼 코멘트·PK·FK) 적용 — **최초 1회**
+   ```bash
+   uv run python -m migrations.apply_schema_metadata --dry-run   # 실행할 SQL 미리보기
+   uv run python -m migrations.apply_schema_metadata             # 실제 적용 (멱등)
+   ```
+   > Text-to-SQL 정확도는 이 메타데이터(스키마 링킹의 코드값·조인 단서)에 크게
+   > 의존한다. `get_schema_text` 가 런타임에 카탈로그에서 이 정보를 읽어온다.
+   > 도메인 지식은 코드가 아니라 `schema_metadata.json` 에서만 수정한다.
 
 ## 실행
 

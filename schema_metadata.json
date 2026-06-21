@@ -1,0 +1,130 @@
+{
+  "_comment": "도메인 지식의 단일 출처(single source of truth). migrations/apply_schema_metadata.py 가 이 파일을 읽어 DB 에 COMMENT/PK/FK 를 심고, 런타임의 get_schema_text 는 그것을 카탈로그에서 다시 읽어온다. 코드(main.py)에는 도메인 지식을 두지 않는다.",
+  "schema": "public",
+  "tables": {
+    "district": {
+      "comment": "지점/지역 정보 (인구·급여·실업률·범죄 통계)",
+      "primary_key": ["district_id"],
+      "columns": {
+        "district_id": {"comment": "지점 위치 ID"},
+        "a2": {"comment": "지역명"},
+        "a3": {"comment": "광역권(region)"},
+        "a4": {"comment": "총 인구수"},
+        "a5": {"comment": "인구 499 이하 지자체 수"},
+        "a6": {"comment": "인구 500-1999 지자체 수"},
+        "a7": {"comment": "인구 2000-9999 지자체 수"},
+        "a8": {"comment": "인구 10000 초과 지자체 수"},
+        "a9": {"comment": "(미사용)"},
+        "a10": {"comment": "도시 거주 인구 비율"},
+        "a11": {"comment": "평균 급여"},
+        "a12": {"comment": "실업률 1995"},
+        "a13": {"comment": "실업률 1996"},
+        "a14": {"comment": "인구 1000명당 사업자 수"},
+        "a15": {"comment": "범죄 건수 1995"},
+        "a16": {"comment": "범죄 건수 1996"}
+      }
+    },
+    "account": {
+      "comment": "계좌",
+      "primary_key": ["account_id"],
+      "columns": {
+        "account_id": {"comment": "계좌 ID"},
+        "district_id": {"comment": "지점 위치", "fk": "district.district_id"},
+        "frequency": {
+          "comment": "명세서 발급 주기",
+          "values": {"POPLATEK MESICNE": "월간", "POPLATEK TYDNE": "주간", "POPLATEK PO OBRATU": "거래 시"}
+        },
+        "date": {"comment": "계좌 개설일"}
+      }
+    },
+    "client": {
+      "comment": "고객",
+      "primary_key": ["client_id"],
+      "columns": {
+        "client_id": {"comment": "고객 ID"},
+        "gender": {"comment": "성별", "values": {"F": "여성", "M": "남성"}},
+        "birth_date": {"comment": "생년월일"},
+        "district_id": {"comment": "지점 위치", "fk": "district.district_id"}
+      }
+    },
+    "disp": {
+      "comment": "권한(disposition) — 고객-계좌 연결",
+      "primary_key": ["disp_id"],
+      "columns": {
+        "disp_id": {"comment": "권한 레코드 ID"},
+        "client_id": {"comment": "고객 ID", "fk": "client.client_id"},
+        "account_id": {"comment": "계좌 ID", "fk": "account.account_id"},
+        "type": {"comment": "권한 유형", "values": {"OWNER": "소유자", "USER": "사용자", "DISPONENT": ""}}
+      }
+    },
+    "card": {
+      "comment": "신용카드",
+      "primary_key": ["card_id"],
+      "columns": {
+        "card_id": {"comment": "카드 ID"},
+        "disp_id": {"comment": "권한 ID", "fk": "disp.disp_id"},
+        "type": {"comment": "카드 등급", "values": ["junior", "classic", "gold"]},
+        "issued": {"comment": "발급일"}
+      }
+    },
+    "loan": {
+      "comment": "대출",
+      "primary_key": ["loan_id"],
+      "columns": {
+        "loan_id": {"comment": "대출 ID"},
+        "account_id": {"comment": "계좌 ID", "fk": "account.account_id"},
+        "date": {"comment": "대출 승인일"},
+        "amount": {"comment": "승인 금액 (USD)"},
+        "duration": {"comment": "대출 기간 (개월)"},
+        "payments": {"comment": "월 상환액"},
+        "status": {
+          "comment": "상환 상태",
+          "values": {"A": "완료/정상", "B": "완료/미상환", "C": "진행중/정상", "D": "진행중/연체"}
+        }
+      }
+    },
+    "order": {
+      "comment": "영구 이체(자동이체) 지시",
+      "primary_key": ["order_id"],
+      "columns": {
+        "order_id": {"comment": "이체 지시 ID"},
+        "account_id": {"comment": "출금 계좌 ID", "fk": "account.account_id"},
+        "bank_to": {"comment": "수취 은행 (2자리 코드)"},
+        "account_to": {"comment": "수취 계좌"},
+        "amount": {"comment": "이체 금액"},
+        "k_symbol": {
+          "comment": "목적",
+          "values": {"POJISTNE": "보험", "SIPO": "공과금", "LEASING": "리스", "UVER": "대출상환"}
+        }
+      }
+    },
+    "trans": {
+      "comment": "거래 내역 (대용량)",
+      "primary_key": ["trans_id"],
+      "columns": {
+        "trans_id": {"comment": "거래 ID"},
+        "account_id": {"comment": "계좌 ID", "fk": "account.account_id"},
+        "date": {"comment": "거래일"},
+        "type": {"comment": "입출 구분", "values": {"PRIJEM": "입금", "VYDAJ": "출금"}},
+        "operation": {
+          "comment": "거래 수단",
+          "values": {
+            "VYBER KARTOU": "카드출금", "VKLAD": "현금입금", "PREVOD Z UCTU": "타행수금",
+            "VYBER": "현금출금", "PREVOD NA UCET": "타행송금"
+          }
+        },
+        "amount": {"comment": "금액 (USD)"},
+        "balance": {"comment": "거래 후 잔액 (USD)"},
+        "k_symbol": {
+          "comment": "거래 성격",
+          "values": {
+            "POJISTNE": "보험", "SLUZBY": "명세서료", "UROK": "이자", "SANKC. UROK": "연체이자",
+            "SIPO": "공과금", "DUCHOD": "연금", "UVER": "대출상환"
+          }
+        },
+        "bank": {"comment": "상대 은행 (2자리 코드)"},
+        "account": {"comment": "상대 계좌"}
+      }
+    }
+  }
+}

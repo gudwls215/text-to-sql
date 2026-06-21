@@ -65,22 +65,16 @@ def get_connection():
 
 
 def get_schema_text(conn, schema: str = "public") -> str:
-    """DB 의 information_schema 에서 (테이블, 컬럼, 타입) 스키마 문자열을 만든다."""
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT table_name, column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = %s
-        ORDER BY table_name, ordinal_position
-        """,
-        (schema,),
-    )
-    tables: dict[str, list[str]] = {}
-    for t, c, dt in cur.fetchall():
-        tables.setdefault(t, []).append(f"{c} {dt}")
-    return "\n".join(
-        f"TABLE {t} ({', '.join(cols)})" for t, cols in tables.items()
+    """카탈로그(컬럼·코멘트·FK)에서 풍부한 스키마 문자열을 만든다.
+
+    main.py 와 동일한 `core.schema_introspect` 를 사용해 평가 입력과 실제
+    추론 입력이 일치하도록 한다. 코멘트/FK 가 없는 DB 에서도 컬럼/타입만으로
+    동작한다(보강 정보는 모두 선택적).
+    """
+    from core import schema_introspect
+
+    return schema_introspect.render_schema_text(
+        schema_introspect.fetch_schema(conn, schema)
     )
 
 

@@ -1,7 +1,12 @@
 import os
+import re
+from collections import deque
+
 import psycopg2
-from openai import OpenAI
 from dotenv import load_dotenv
+from openai import OpenAI
+
+from core import schema_introspect
 
 # .env 파일의 값을 환경변수로 로드
 load_dotenv()
@@ -10,10 +15,10 @@ SCHEMA = "public"
 MODEL = "gpt-4o-mini"   # 원하는 OpenAI 모델로
 
 # OpenAI 클라이언트는 지연 생성 (import 만으로 키를 요구하지 않도록)
-_client = None
+_client: OpenAI | None = None
 
 
-def get_client():
+def get_client() -> OpenAI:
     global _client
     if _client is None:
         _client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -30,39 +35,150 @@ def get_connection():
     )
 
 
-def get_schema_text(conn, schema):
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT table_name, column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = %s
-        ORDER BY table_name, ordinal_position
-    """, (schema,))
-    tables = {}
-    for t, c, dt in cur.fetchall():
-        tables.setdefault(t, []).append(f"{c} {dt}")
-    return "\n".join(f"TABLE {t} ({', '.join(cols)})"
-                     for t, cols in tables.items())
+def get_schema_text(conn, schema: str) -> str:
+    """카탈로그(컬럼·코멘트·FK)에서 풍부한 스키마 텍스트를 만든다.
+
+    도메인 지식은 DB 에 심긴 코멘트/FK 에서 온다(코드 하드코딩 없음).
+    심어두려면 `python -m migrations.apply_schema_metadata` 를 한 번 실행한다.
+    """
+    return schema_introspect.render_schema_text(schema_introspect.fetch_schema(conn, schema))
 
 
-def generate_sql(question, schema_text):
-    prompt = (f"PostgreSQL schema:\n{schema_text}\n\n"
-              f"Question: {question}\n"
-              f"Return ONLY a SQL query, no explanation. "
-              f"Use schema-qualified names like {SCHEMA}.table_name.")
+# ── Schema linking ───────────────────────────────────────────────────────────
+# 질문과 관련된 테이블만 골라(linking) FK 로 연결 테이블을 보강한 뒤, 해당
+# 테이블 블록만 프롬프트에 싣는다. 매칭 단서·코드값·FK 는 schema_text(=DB
+# 카탈로그) 에서 그대로 가져오므로 main.py 에는 도메인 지식이 없다.
+
+_TOKEN = re.compile(r"[0-9A-Za-z가-힣]+")
+
+
+def _table_terms(table: dict) -> set[str]:
+    """테이블을 가리키는 매칭 토큰 — 테이블/컬럼 코멘트와 컬럼명에서 추출."""
+    blob = [table.get("comment") or ""]
+    for col in table["columns"]:
+        blob.append(col["name"])
+        if col.get("comment"):
+            blob.append(col["comment"])
+    return {tok.lower() for tok in _TOKEN.findall(" ".join(blob)) if len(tok) >= 2}
+
+
+def _score(question: str, terms: set[str]) -> int:
+    q = question.lower()
+    return sum(1 for term in terms if term in q)
+
+
+def _fk_graph(schema: dict) -> dict[str, set[str]]:
+    adj: dict[str, set[str]] = {t: set() for t in schema}
+    for tname, table in schema.items():
+        for col in table["columns"]:
+            fk = col.get("fk")
+            if fk and fk[0] in adj:
+                adj[tname].add(fk[0])
+                adj[fk[0]].add(tname)
+    return adj
+
+
+def _shortest_path(adj: dict[str, set[str]], src: str, dst: str) -> list[str]:
+    prev: dict[str, str | None] = {src: None}
+    queue = deque([src])
+    while queue:
+        node = queue.popleft()
+        if node == dst:
+            break
+        for nxt in adj[node]:
+            if nxt not in prev:
+                prev[nxt] = node
+                queue.append(nxt)
+    if dst not in prev:
+        return []
+    path, cur = [], dst
+    while cur is not None:
+        path.append(cur)
+        cur = prev[cur]
+    return list(reversed(path))
+
+
+def _fk_connectors(selected: set[str], schema: dict) -> set[str]:
+    """선택된 테이블들을 잇는 FK 경로상의 중간 테이블을 보강 (조인 가능하도록)."""
+    adj = _fk_graph(schema)
+    sel = list(selected)
+    extra: set[str] = set()
+    for i in range(len(sel)):
+        for j in range(i + 1, len(sel)):
+            extra.update(_shortest_path(adj, sel[i], sel[j]))
+    return extra - selected
+
+
+def link_tables(question: str, schema: dict) -> list[str]:
+    """질문과 관련된 테이블만 선택하고 FK 연결 테이블을 보강해 반환한다.
+
+    아무 테이블도 매칭되지 않으면 전체 스키마로 폴백한다(정확도 손실 방지).
+    """
+    selected = {name for name, table in schema.items()
+                if _score(question, _table_terms(table)) > 0}
+    if not selected:
+        return list(schema)
+    selected |= _fk_connectors(selected, schema)
+    return [t for t in schema if t in selected]  # schema_text 등장 순서 유지
+
+
+def build_focused_schema(question: str, schema_text: str) -> str:
+    """질문 관련 테이블 블록만 추려낸 스키마 텍스트 (코멘트·코드값·FK 포함)."""
+    schema = schema_introspect.parse_schema_text(schema_text)
+    if not schema:
+        return schema_text  # 파싱 실패 시 원본 그대로 사용
+    selected = link_tables(question, schema)
+    chosen = set(selected)
+    focused: dict = {}
+    for name in selected:
+        table = schema[name]
+        cols = []
+        for col in table["columns"]:
+            # 선택되지 않은 테이블로의 FK 는 숨겨 프롬프트를 깔끔히 유지
+            if col.get("fk") and col["fk"][0] not in chosen:
+                col = {**col, "fk": None}
+            cols.append(col)
+        focused[name] = {"comment": table.get("comment"), "columns": cols}
+    return schema_introspect.render_schema_text(focused)
+
+
+def _clean_sql(text: str) -> str:
+    """LLM 응답에서 코드펜스/언어태그/후행 세미콜론을 제거해 순수 SQL 만 남긴다."""
+    s = text.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\n?", "", s)
+        s = re.sub(r"\n?```$", "", s).strip()
+    return s.removeprefix("sql").strip().rstrip(";").strip()
+
+
+def generate_sql(question: str, schema_text: str) -> str:
+    focused = build_focused_schema(question, schema_text)
+    prompt = (
+        "당신은 PostgreSQL 전문가입니다. 아래는 질문과 관련된 테이블만 추린 스키마입니다.\n"
+        "각 컬럼 뒤 '-- 설명 (코드값)' 과 '-> 부모.컬럼'(FK) 을 참고하세요.\n\n"
+        f"[스키마]\n{focused}\n\n"
+        f"[질문] {question}\n\n"
+        "규칙:\n"
+        "- SQL 쿼리만 출력하세요. 설명/마크다운/코드펜스 금지.\n"
+        f'- 테이블은 {SCHEMA}.table_name 으로 한정하고, 예약어 테이블은 큰따옴표로 감싸세요 (예: {SCHEMA}."order").\n'
+        "- 코드값 매핑을 WHERE 절에 정확히 사용하세요.\n"
+        "- 여러 테이블이 필요하면 제공된 FK 경로(->)를 따라 조인하세요."
+    )
     resp = get_client().chat.completions.create(
         model=MODEL,
-        messages=[{"role": "user", "content": prompt}])
-    return resp.choices[0].message.content.strip().strip("`").removeprefix("sql").strip()
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+    )
+    return _clean_sql(resp.choices[0].message.content or "")
 
 
-def run_sql(conn, sql):
+def run_sql(conn, sql: str):
     cur = conn.cursor()
     cur.execute(sql)
     return cur.fetchall()
 
 
-def main():
+def main() -> None:
     conn = get_connection()
     schema_text = get_schema_text(conn, SCHEMA)
     q = "How many accounts are there?"
