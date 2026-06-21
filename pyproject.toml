@@ -4,9 +4,12 @@ version = "0.1.0"
 description = "BIRD 데이터셋 기반 Text-to-SQL baseline + 한국어 평가 세트"
 requires-python = ">=3.10"
 dependencies = [
+    "langgraph>=1.2.6",
+    "langsmith>=0.8.18",
     "openai",
     "psycopg2-binary",
     "python-dotenv",
+    "truststore>=0.10.4",
 ]
 
 [dependency-groups]

@@ -106,6 +106,18 @@ FROM eval.run ORDER BY created_at DESC;
 > SUT 의 LLM 모델명은 진입점 모듈의 `MODEL` 상수에서 best-effort 로 읽는다.
 > 모듈에 없으면 환경변수 `T2S_MODEL` 로 명시할 수 있다.
 
+## Self-correction 루프와 비교(A/B)
+
+기본 진입점은 단일샷 `main:generate_sql` 이다. 생성→실행→judge→수정 루프
+(`main:generate_sql_corrected`, LangGraph 조건부 엣지)로 바꿔 같은 데이터셋을
+돌리면 이력에서 두 방식을 정량 비교할 수 있다. 설계 근거는
+[`docs/self_correction_loop.md`](../docs/self_correction_loop.md) 참고.
+
+```powershell
+$env:T2S_ENTRYPOINT = "main:generate_sql_corrected"
+uv run python -m eval.evaluate --note "self-correction"
+```
+
 ## 데이터셋 확장
 
 `eval/dataset/financial_ko.json` 의 `items` 에 항목을 추가한다.

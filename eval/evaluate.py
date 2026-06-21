@@ -21,11 +21,51 @@ Text-to-SQL 성능 평가 CLI.
 from __future__ import annotations
 
 import argparse
+import importlib
+import logging
 import os
 import sys
 import time
 
 from eval import runner, store
+
+
+def _configure_graph_logging() -> None:
+    """self-correction 실행 과정을 콘솔에 출력한다."""
+    if os.environ.get("T2S_GRAPH_LOG") is None:
+        os.environ["T2S_GRAPH_LOG"] = "1"
+
+    logger = logging.getLogger("t2s.correction_graph")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("[graph] %(message)s"))
+        logger.addHandler(handler)
+    logger.propagate = False
+
+
+def _last_correction_summary(entrypoint: str) -> dict | None:
+    """main:get_last_correction_state 를 통해 마지막 루프 상태를 가져온다."""
+    if not entrypoint.endswith(":generate_sql_corrected"):
+        return None
+    module_name = entrypoint.partition(":")[0]
+    try:
+        module = importlib.import_module(module_name)
+        getter = getattr(module, "get_last_correction_state", None)
+        if not callable(getter):
+            return None
+        state = getter()
+        if not isinstance(state, dict):
+            return None
+        history = state.get("history") or []
+        return {
+            "attempts": state.get("attempts"),
+            "final_verdict": state.get("verdict"),
+            "history_len": len(history),
+            "last_feedback": (history[-1].get("feedback") if history else None),
+        }
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def evaluate(
@@ -35,6 +75,14 @@ def evaluate(
     do_store: bool = True,
     note: str | None = None,
 ) -> int:
+    entrypoint = os.environ.get("T2S_ENTRYPOINT")
+    if not entrypoint:
+        entrypoint = "main:generate_sql_corrected"
+        os.environ["T2S_ENTRYPOINT"] = entrypoint
+
+    if entrypoint.endswith(":generate_sql_corrected"):
+        _configure_graph_logging()
+
     items = runner.load_dataset()
     if difficulty:
         items = [it for it in items if it["difficulty"] == difficulty]
@@ -44,14 +92,25 @@ def evaluate(
     meta = runner.dataset_meta()
     schema = meta.get("schema", "public")
 
-    generate_sql = runner.resolve_generate_sql()
+    generate_sql = runner.resolve_generate_sql(entrypoint)
     conn = runner.get_connection()
     schema_text = runner.get_schema_text(conn, schema)
 
     results: list[dict] = []
     correct = 0
     t_start = time.time()
-    print(f"\n{'='*70}\nText-to-SQL 평가 — {len(items)}개 문항 (schema={schema})\n{'='*70}")
+    print(
+        f"\n{'='*70}\n"
+        f"Text-to-SQL 평가 — {len(items)}개 문항 (schema={schema})\n"
+        f"Entrypoint: {entrypoint}\n"
+        f"{'='*70}"
+    )
+    if not entrypoint.endswith(":generate_sql_corrected"):
+        print(
+            "⚠️  현재 entrypoint 는 self-correction 루프가 아닙니다. "
+            "LangSmith 에 self_correction 루트가 안 보일 수 있습니다."
+        )
+
     for it in items:
         qid, question, gold_sql = it["id"], it["question"], it["gold_sql"]
         try:
@@ -70,6 +129,7 @@ def evaluate(
         err: str | None = None
         pred_sql = "<생성 실패>"
         try:
+            os.environ["T2S_EVAL_ITEM_ID"] = str(qid)
             pred_sql = generate_sql(question, schema_text)
             pred_rows = runner.run_sql(conn, pred_sql)
             ok = runner.results_match(gold_rows, pred_rows)
@@ -77,7 +137,20 @@ def evaluate(
             ok = False
             err = str(e)
             print(f"[{qid}] ❌ 실행 오류: {e}")
+        finally:
+            os.environ.pop("T2S_EVAL_ITEM_ID", None)
         dt = time.time() - t0
+
+        summary = _last_correction_summary(entrypoint)
+        if summary:
+            print(
+                "        [corr] "
+                f"attempts={summary['attempts']} "
+                f"verdict={summary['final_verdict']} "
+                f"history_len={summary['history_len']}"
+            )
+            if summary.get("last_feedback"):
+                print(f"        [hint] {summary['last_feedback']}")
 
         correct += int(ok)
         mark = "✅" if ok else "❌"

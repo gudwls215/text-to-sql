@@ -4,25 +4,18 @@ from collections import deque
 
 import psycopg2
 from dotenv import load_dotenv
-from openai import OpenAI
 
-from core import schema_introspect
+from core import llm_client, schema_introspect
 
 # .env 파일의 값을 환경변수로 로드
 load_dotenv()
 
 SCHEMA = "public"
-MODEL = "gpt-4o-mini"   # 원하는 OpenAI 모델로
+MODEL = "gpt-3.5-turbo"   # 원하는 OpenAI 모델로
+_LAST_CORRECTION_STATE: dict | None = None
 
-# OpenAI 클라이언트는 지연 생성 (import 만으로 키를 요구하지 않도록)
-_client: OpenAI | None = None
-
-
-def get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    return _client
+# 외부 LLM 호출은 core.llm_client 경유 (CLAUDE.md 규약). 모델은 MODEL 로 고정해
+# 전달하므로 eval 의 resolve_model_name(main.MODEL) 이 정확히 동작한다.
 
 
 def get_connection():
@@ -151,7 +144,15 @@ def _clean_sql(text: str) -> str:
     return s.removeprefix("sql").strip().rstrip(";").strip()
 
 
-def generate_sql(question: str, schema_text: str) -> str:
+def build_generation_prompt(
+    question: str, schema_text: str, correction: dict | None = None
+) -> str:
+    """SQL 생성 프롬프트를 만든다.
+
+    correction 이 주어지면(=재시도) 직전 SQL·실행 피드백·judge 피드백을 덧붙여
+    "고쳐서 다시 출력하라"는 self-correction 지시를 추가한다. self-correction
+    그래프(core.correction_graph)의 generate 노드가 이 경로를 사용한다.
+    """
     focused = build_focused_schema(question, schema_text)
     prompt = (
         "당신은 PostgreSQL 전문가입니다. 아래는 질문과 관련된 테이블만 추린 스키마입니다.\n"
@@ -164,12 +165,48 @@ def generate_sql(question: str, schema_text: str) -> str:
         "- 코드값 매핑을 WHERE 절에 정확히 사용하세요.\n"
         "- 여러 테이블이 필요하면 제공된 FK 경로(->)를 따라 조인하세요."
     )
-    resp = get_client().chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-    )
-    return _clean_sql(resp.choices[0].message.content or "")
+    if correction:
+        prev_sql = correction.get("prev_sql") or ""
+        feedback = correction.get("feedback") or ""
+        prompt += (
+            "\n\n[직전 시도]\n"
+            f"{prev_sql}\n\n"
+            "[피드백]\n"
+            f"{feedback}\n\n"
+            "위 피드백을 반영해 문제를 고친 SQL 을 다시 출력하세요. "
+            "설명 없이 SQL 만 출력합니다."
+        )
+    return prompt
+
+
+def generate_sql(question: str, schema_text: str) -> str:
+    """단일샷 SQL 생성 (안정 계약). self-correction 은 generate_sql_corrected 참고."""
+    prompt = build_generation_prompt(question, schema_text)
+    return _clean_sql(llm_client.complete(prompt, model=MODEL, temperature=0))
+
+
+def generate_sql_corrected(question: str, schema_text: str) -> str:
+    """self-correction 루프로 SQL 을 생성한다 (생성→실행→judge→수정).
+
+    안정 계약 generate_sql 과 동일한 시그니처라 평가의 진입점으로 바로 쓸 수
+    있다(T2S_ENTRYPOINT="main:generate_sql_corrected"). 실행 검증을 위해 자체
+    DB 연결을 열고 닫는다.
+    """
+    from core import correction_graph  # 지연 임포트로 순환참조 방지
+
+    conn = get_connection()
+    try:
+        state = correction_graph.run(question, schema_text, conn=conn)
+    finally:
+        conn.close()
+    global _LAST_CORRECTION_STATE
+    _LAST_CORRECTION_STATE = dict(state)
+    return state["sql"]
+
+
+def get_last_correction_state() -> dict | None:
+    """가장 최근 self-correction 최종 state (없으면 None)."""
+    return _LAST_CORRECTION_STATE
 
 
 def run_sql(conn, sql: str):

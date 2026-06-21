@@ -29,6 +29,17 @@ if str(REPO_ROOT) not in sys.path:
 from eval import runner  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _disable_langsmith_tracing(monkeypatch):
+    """테스트는 LangSmith 로 트레이스를 보내지 않는다.
+
+    개발 환경의 .env 에 LANGSMITH_TRACING=true 가 켜져 있어도, 단위 테스트가
+    네트워크(특히 사내 SSL 환경)로 나가 느려지거나 깨지지 않도록 끈다.
+    """
+    for var in ("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING_V2"):
+        monkeypatch.setenv(var, "false")
+
+
 def _db_available() -> bool:
     try:
         conn = runner.get_connection()
